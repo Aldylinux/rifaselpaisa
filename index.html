@@ -17,7 +17,7 @@
 
     <div class="max-w-6xl mx-auto">
         <!-- Encabezado inspirado en la boleta -->
-        <header class="text-center mb-8 bg-gradient-to-r from-pink-600 to-pink-500 text-white p-6 rounded-2xl shadow-lg border-4 border-pink-700">
+        <header class="text-center mb-6 bg-gradient-to-r from-pink-600 to-pink-500 text-white p-6 rounded-2xl shadow-lg border-4 border-pink-700">
             <h1 class="text-5xl md:text-7xl font-black italic tracking-wider uppercase titulo-sombra mb-2">
                 Rifas el Paisa
             </h1>
@@ -27,6 +27,11 @@
             <p class="mt-2 text-lg">Selecciona los números vendidos para tacharlos</p>
         </header>
 
+        <!-- Indicador de estado de conexión con Firebase -->
+        <div id="estado-conexion" class="mb-6 p-3 rounded-xl text-center font-bold text-sm bg-yellow-100 text-yellow-800 border border-yellow-300">
+            ⏳ Conectando con la base de datos...
+        </div>
+
         <!-- Panel de Control, Búsqueda, Progreso y Botón de Compartir -->
         <div class="bg-white p-6 rounded-2xl shadow-md mb-8 border border-pink-200">
             <div class="flex flex-col lg:flex-row justify-between items-center gap-6">
@@ -34,11 +39,11 @@
                 <div class="flex gap-4 md:gap-6 text-center w-full lg:w-auto justify-center">
                     <div class="bg-pink-100 p-4 rounded-xl border border-pink-200 w-28 md:w-32">
                         <p class="text-xs md:text-sm text-pink-600 font-bold uppercase">Disponibles</p>
-                        <p id="contador-disponibles" class="text-2xl md:text-3xl font-black text-pink-700">1000</p>
+                        <p id="contador-disponibles" class="text-2xl md:text-3xl font-black text-pink-700">...</p>
                     </div>
                     <div class="bg-gray-100 p-4 rounded-xl border border-gray-200 w-28 md:w-32">
                         <p class="text-xs md:text-sm text-gray-500 font-bold uppercase">Vendidas</p>
-                        <p id="contador-vendidas" class="text-2xl md:text-3xl font-black text-gray-700">0</p>
+                        <p id="contador-vendidas" class="text-2xl md:text-3xl font-black text-gray-700">...</p>
                     </div>
                 </div>
                 
@@ -76,7 +81,7 @@
         </div>
 
         <!-- Cuadrícula de 1000 Boletas -->
-        <div id="cuadricula-boletas" class="grid grid-cols-5 sm:grid-cols-10 md:grid-cols-12 lg:grid-cols-20 gap-2">
+        <div id="cuadricula-boletas" class="grid grid-cols-5 sm:grid-cols-10 md:grid-cols-12 lg:grid-cols-[repeat(20,minmax(0,1fr))] gap-2">
             <!-- Las boletas se generan aquí -->
         </div>
     </div>
@@ -104,26 +109,24 @@
     <!-- Lógica de la aplicación y conexión a Firebase -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, setDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // =========================================================
-        // PEGA AQUÍ LA CONFIGURACIÓN DE TU FIREBASE
-        // =========================================================
         const firebaseConfig = {
-  apiKey: "AIzaSyCBIZ1qiiwfJCCjdfLSXef1ZWy0JZPtLBU",
-  authDomain: "moto-taxi-el-paisa.firebaseapp.com",
-  projectId: "moto-taxi-el-paisa",
-  storageBucket: "moto-taxi-el-paisa.firebasestorage.app",
-  messagingSenderId: "980097402449",
-  appId: "1:980097402449:web:1cc347eb3336e07d055a70",
-  measurementId: "G-LR0XQY8G0W"
-};
+            apiKey: "AIzaSyCBIZ1qiiwfJCCjdfLSXef1ZWy0JZPtLBU",
+            authDomain: "moto-taxi-el-paisa.firebaseapp.com",
+            projectId: "moto-taxi-el-paisa",
+            storageBucket: "moto-taxi-el-paisa.firebasestorage.app",
+            messagingSenderId: "980097402449",
+            appId: "1:980097402449:web:1cc347eb3336e07d055a70",
+            measurementId: "G-LR0XQY8G0W"
+        };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const rifaRef = doc(db, "rifas", "diciembre2026");
 
         let boletasVendidas = [];
+        let datosCargados = false;
         const totalBoletas = 1000;
 
         // DOM de la App principal
@@ -133,9 +136,19 @@
         const buscador = document.getElementById('buscador');
         const porcentajeTexto = document.getElementById('porcentaje-texto');
         const barraProgreso = document.getElementById('barra-progreso');
-        
-        // DOM del botón de compartir
+        const estadoConexion = document.getElementById('estado-conexion');
         const btnCompartir = document.getElementById('btn-compartir');
+
+        function mostrarEstado(tipo, mensaje) {
+            if (tipo === 'ok') {
+                estadoConexion.className = "mb-6 p-3 rounded-xl text-center font-bold text-sm bg-green-100 text-green-800 border border-green-300";
+            } else if (tipo === 'error') {
+                estadoConexion.className = "mb-6 p-3 rounded-xl text-center font-bold text-sm bg-red-100 text-red-800 border border-red-300";
+            } else {
+                estadoConexion.className = "mb-6 p-3 rounded-xl text-center font-bold text-sm bg-yellow-100 text-yellow-800 border border-yellow-300";
+            }
+            estadoConexion.textContent = mensaje;
+        }
 
         function inicializarCuadricula() {
             for (let i = 0; i < totalBoletas; i++) {
@@ -143,7 +156,7 @@
                 const boton = document.createElement('button');
                 boton.id = `boleta-${numero}`;
                 boton.textContent = numero;
-                boton.className = `boleta w-full py-2 sm:py-3 rounded-lg font-bold text-sm sm:text-lg border-b-4 focus:outline-none bg-pink-600 text-white border-pink-800 hover:bg-pink-500`;
+                boton.className = `boleta w-full py-2 sm:py-3 rounded-lg font-bold text-sm sm:text-lg border-b-4 focus:outline-none bg-pink-300 text-white border-pink-400 cursor-wait`;
                 
                 boton.addEventListener('click', () => alternarEstadoBoleta(numero));
                 contenedor.appendChild(boton);
@@ -151,18 +164,20 @@
         }
 
         function actualizarInterfaz() {
+            const setVendidas = new Set(boletasVendidas);
+
             for (let i = 0; i < totalBoletas; i++) {
                 const numero = i.toString().padStart(3, '0');
                 const boton = document.getElementById(`boleta-${numero}`);
                 
-                if (boletasVendidas.includes(numero)) {
+                if (setVendidas.has(numero)) {
                     boton.className = `boleta w-full py-2 sm:py-3 rounded-lg font-bold text-sm sm:text-lg border-b-2 bg-gray-200 text-gray-400 line-through border-gray-300`;
                 } else {
                     boton.className = `boleta w-full py-2 sm:py-3 rounded-lg font-bold text-sm sm:text-lg border-b-4 cursor-pointer bg-pink-600 text-white border-pink-800 hover:bg-pink-500 hover:-translate-y-1 active:translate-y-0 active:border-b-0`;
                 }
             }
             
-            const vendidas = boletasVendidas.length;
+            const vendidas = setVendidas.size;
             contadorVendidas.textContent = vendidas;
             contadorDisponibles.textContent = totalBoletas - vendidas;
 
@@ -172,28 +187,49 @@
             barraProgreso.style.width = `${porcentaje}%`;
         }
 
+        // BLINDADO: Agrega o quita solo el número seleccionado sin sobrescribir la lista completa
         async function alternarEstadoBoleta(numero) {
-            if (boletasVendidas.includes(numero)) {
-                boletasVendidas = boletasVendidas.filter(n => n !== numero);
-            } else {
-                boletasVendidas.push(numero);
+            if (!datosCargados) {
+                alert("Espera un momento mientras termina de cargar la conexión con Firebase.");
+                return;
+            }
+
+            const yaEstabaVendida = boletasVendidas.includes(numero);
+
+            if (yaEstabaVendida) {
+                const confirmar = confirm(`¿Seguro que quieres desmarcar la boleta ${numero} y dejarla disponible otra vez?`);
+                if (!confirmar) return;
             }
 
             try {
-                await setDoc(rifaRef, { vendidas: boletasVendidas }, { merge: true });
+                if (yaEstabaVendida) {
+                    await setDoc(rifaRef, { vendidas: arrayRemove(numero) }, { merge: true });
+                } else {
+                    await setDoc(rifaRef, { vendidas: arrayUnion(numero) }, { merge: true });
+                }
             } catch (error) {
                 console.error("Error guardando:", error);
+                mostrarEstado('error', `🔴 No se pudo guardar la boleta ${numero}: ${error.code || error.message}`);
+                alert(`No se pudo guardar en Firebase.\n\nError: ${error.code || error.message}\n\nRevisa las reglas de Firestore.`);
             }
         }
 
         function escucharFirebase() {
             onSnapshot(rifaRef, (docSnap) => {
+                datosCargados = true;
                 if (docSnap.exists()) {
-                    boletasVendidas = docSnap.data().vendidas || [];
+                    const data = docSnap.data();
+                    boletasVendidas = Array.isArray(data.vendidas) ? data.vendidas : [];
                 } else {
-                    setDoc(rifaRef, { vendidas: [] });
+                    // Jamás sobrescribe el documento con una lista vacía automáticamente
+                    boletasVendidas = [];
                 }
                 actualizarInterfaz();
+                mostrarEstado('ok', '🟢 Conectado y sincronizado en tiempo real con Firebase');
+            }, (error) => {
+                datosCargados = false;
+                console.error("Error de Firebase:", error);
+                mostrarEstado('error', `🔴 Error de Firebase (${error.code}): revisa las Reglas de Firestore`);
             });
         }
 
@@ -201,15 +237,20 @@
         // FUNCIÓN PARA GENERAR Y COMPARTIR LA IMAGEN
         // =========================================================
         btnCompartir.addEventListener('click', async () => {
+            if (!datosCargados) {
+                alert("Espera a que la barra superior aparezca en verde antes de generar la imagen.");
+                return;
+            }
+
             const textoOriginal = btnCompartir.innerHTML;
             btnCompartir.innerHTML = '⏳ Preparando imagen...';
             btnCompartir.disabled = true;
             btnCompartir.classList.add('opacity-75');
 
             try {
-                // 1. Armar la cuadrícula oculta con el estado actual
                 const gridCaptura = document.getElementById('grid-captura');
                 gridCaptura.innerHTML = '';
+                const setVendidas = new Set(boletasVendidas);
                 
                 for (let i = 0; i < totalBoletas; i++) {
                     const numero = i.toString().padStart(3, '0');
@@ -221,13 +262,11 @@
                     div.style.borderRadius = '6px';
                     div.style.fontSize = '15px';
 
-                    if (boletasVendidas.includes(numero)) {
-                        // Vendida (tachada, gris)
+                    if (setVendidas.has(numero)) {
                         div.style.backgroundColor = '#e5e7eb';
                         div.style.color = '#9ca3af';
                         div.style.textDecoration = 'line-through';
                     } else {
-                        // Disponible (magenta brillante)
                         div.style.backgroundColor = '#db2777';
                         div.style.color = 'white';
                         div.style.borderBottom = '3px solid #be185d';
@@ -235,23 +274,20 @@
                     gridCaptura.appendChild(div);
                 }
 
-                // 2. Tomar la foto con html2canvas
                 const zonaCaptura = document.getElementById('zona-captura');
-                zonaCaptura.style.display = 'block'; // Mostrar solo para la foto
+                zonaCaptura.style.display = 'block';
 
                 const canvas = await html2canvas(zonaCaptura, {
-                    scale: 2, // Mejor resolución para que no se vea borrosa al hacer zoom
+                    scale: 2,
                     backgroundColor: '#fdf2f8',
                     logging: false
                 });
 
-                zonaCaptura.style.display = 'none'; // Ocultar de nuevo
+                zonaCaptura.style.display = 'none';
 
-                // 3. Compartir en móviles o descargar en PC
                 canvas.toBlob(async (blob) => {
                     const file = new File([blob], 'rifas-disponibles.png', { type: 'image/png' });
                     
-                    // Si el navegador soporta compartir archivos directo a WhatsApp/Redes
                     if (navigator.canShare && navigator.canShare({ files: [file] })) {
                         try {
                             await navigator.share({
@@ -261,11 +297,10 @@
                             });
                         } catch (error) {
                             if (error.name !== 'AbortError') {
-                                descargarImagen(blob); // Fallback si falla
+                                descargarImagen(blob);
                             }
                         }
                     } else {
-                        // En PC, simplemente descargar la imagen
                         descargarImagen(blob);
                     }
                 }, 'image/png');
@@ -291,7 +326,6 @@
             URL.revokeObjectURL(url);
         }
 
-        // Buscador
         buscador.addEventListener('input', (e) => {
             const textoBuscado = e.target.value.trim();
             const botones = contenedor.querySelectorAll('button');
@@ -305,10 +339,8 @@
             });
         });
 
-        // Inicializar
         inicializarCuadricula();
         escucharFirebase();
-
     </script>
 </body>
 </html>
